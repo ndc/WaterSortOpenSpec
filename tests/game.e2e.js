@@ -211,6 +211,7 @@ test.describe('Water Sort Puzzle end-to-end (tasks 8.1-8.3)', () => {
             expect(dbg.won).toBe(false);
             expect(dbg.state.tubes.filter((tube) => tube.contents.length === 0)).toHaveLength(emptyTubes);
             expect(dbg.state.tubes.every((tube) => tube.contents.length === 0 || tube.contents.length === tube.capacity)).toBe(true);
+            expect(dbg.state.tubes.every((tube) => tube.contents.length === 0 || new Set(tube.contents).size >= 2)).toBe(true);
             // Solvability itself is exhaustively verified in tests/logic.test.js;
             // here we confirm the generated puzzle renders and is interactive.
             expect(dbg.layout.tubeRects.length).toBe(tubes);

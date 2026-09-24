@@ -7,7 +7,7 @@ A browser-based puzzle game where players configure and solve water-sorting chal
 ## ADDED Requirements
 
 ### Requirement: Puzzle Configuration
-The system SHALL accept player-configurable parameters for puzzle generation: number of colors, number of tubes, tube capacity, and number of empty tubes. Each parameter MUST have a sensible default value. The empty-tube default MUST be 1. Players SHALL be able to adjust these values before generating a puzzle.
+The system SHALL accept player-configurable parameters for puzzle generation: number of colors, number of tubes, tube capacity, and number of empty tubes. Each parameter MUST have a sensible default value. The empty-tube default MUST be 1. Players SHALL be able to adjust these values before generating a puzzle. The system MUST normalize a configuration that cannot provide two colors in every full tube (two colors, capacity two, and an odd filled-tube count) to an even filled-tube count.
 
 #### Scenario: Player configures puzzle with defaults
 - **WHEN** page loads
@@ -18,7 +18,7 @@ The system SHALL accept player-configurable parameters for puzzle generation: nu
 - **THEN** system generates a new puzzle with specified parameters
 
 ### Requirement: Puzzle Generation from Solution
-The system SHALL generate solvable puzzles by constructing a complete solved state and then applying random full-tube exchanges that are reversible by construction. Every generated puzzle MUST be solvable, MUST NOT already satisfy the win condition when handed to the player, and MUST contain exactly the configured number of empty tubes. Every tube that is not empty at game start MUST be full.
+The system SHALL generate solvable puzzles by constructing a complete solved state and then applying random full-tube exchanges that are reversible by construction. Every generated puzzle MUST be solvable, MUST NOT already satisfy the win condition when handed to the player, and MUST contain exactly the configured number of empty tubes. Every tube that is not empty at game start MUST be full and contain at least two distinct colors.
 
 #### Scenario: Puzzle is always solvable
 - **WHEN** system generates a puzzle
@@ -30,7 +30,7 @@ The system SHALL generate solvable puzzles by constructing a complete solved sta
 
 #### Scenario: Puzzle honors configured empty-tube count
 - **WHEN** the player selects a number of empty tubes and generates a puzzle
-- **THEN** exactly that number of tubes is empty, and every other tube is full
+- **THEN** exactly that number of tubes is empty, and every other tube is full and contains at least two distinct colors
 
 ### Requirement: Game Board State
 The system SHALL represent the game board as a collection of tubes, each with a fixed capacity and contents. Tubes contain colored water units stacked from bottom to top. Empty tubes are allowed. The top water unit in a tube is the active unit that can be poured.

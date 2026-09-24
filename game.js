@@ -196,32 +196,9 @@ export function createSolvedState(config) {
 // Swaps top-color segments between two full tubes through an empty buffer.
 // All three generation-only transfers are reversed by valid player pours:
 // destination -> buffer, source -> destination, then buffer -> source.
-// This preserves both the number of empty tubes and the invariant that every
-// occupied tube is full, while still creating mixed tubes.
-function applyFullTubeExchange(tubes, rng) {
-    const emptyIndices = tubes
-        .map((tube, index) => tube.isEmpty() ? index : -1)
-        .filter((index) => index !== -1);
-    const candidates = [];
-    for (let from = 0; from < tubes.length; from++) {
-        if (!tubes[from].isFull()) continue;
-        for (let to = 0; to < tubes.length; to++) {
-            if (to === from || !tubes[to].isFull() || tubes[from].getTop() === tubes[to].getTop()) continue;
-            const maxAmount = Math.min(
-                tubes[from].topRunLength(),
-                tubes[to].topRunLength(),
-                tubes[from].capacity - 1
-            );
-            if (maxAmount > 0) candidates.push({ from, to, maxAmount });
-        }
-    }
-    if (emptyIndices.length === 0 || candidates.length === 0) return false;
-
-    const choice = candidates[Math.floor(rng() * candidates.length)];
-    const buffer = emptyIndices[Math.floor(rng() * emptyIndices.length)];
-    const amount = 1 + Math.floor(rng() * choice.maxAmount);
-    const source = tubes[choice.from];
-    const destination = tubes[choice.to];
+function exchangeFullTubeSegments(tubes, from, to, buffer, amount) {
+    const source = tubes[from];
+    const destination = tubes[to];
     const temporary = tubes[buffer];
     const sourceColor = source.getTop();
     const destinationColor = destination.getTop();
@@ -232,27 +209,52 @@ function applyFullTubeExchange(tubes, rng) {
     source.add(destinationColor, amount);
     temporary.remove(amount);
     destination.add(sourceColor, amount);
-    return true;
 }
 
-// Generates a puzzle from a solved board by exchanging top-color segments
-// through an empty tube. Unlike ordinary valid-pour replay, these exchanges
-// create mixed tubes; unlike the prior spread/shuffle strategy, they retain
-// the exact configured empty-tube count and leave every occupied tube full.
-// Each exchange has a three-pour valid-player inverse, so the puzzle remains
-// solvable by construction without invoking the BFS solver at runtime.
+function everyOccupiedTubeIsMixed(tubes) {
+    return tubes.every((tube) => tube.isEmpty() || new Set(tube.contents).size >= 2);
+}
+
+// Generates a puzzle from a solved board by deterministically pairing full
+// tubes with different top colors and exchanging non-full segments through
+// the first empty tube. Every pair becomes mixed while remaining full. An
+// odd final group is mixed with two exchanges: three distinct colors need two
+// one-unit exchanges, while the two-color case needs a first exchange of at
+// least two units. Each exchange has a three-pour valid-player inverse, so
+// the resulting puzzle is solvable by construction without BFS at runtime.
 export function generatePuzzle(config, options = {}) {
     const rng = options.rng || Math.random;
     const { numColors, capacity } = config;
-    const tubes = createSolvedState(config);
-    const shuffleMoves = options.shuffleMoves || Math.max(12, numColors * capacity * 2);
-    for (let i = 0; i < shuffleMoves; i++) {
-        if (!applyFullTubeExchange(tubes, rng)) break;
+    const emptyTubes = config.emptyTubes ?? DEFAULT_CONFIG.emptyTubes;
+    const filledTubeCount = config.numTubes - emptyTubes;
+    if (numColors === 2 && capacity === 2 && filledTubeCount % 2 !== 0) {
+        throw new Error('two colors with capacity 2 require an even number of filled tubes');
     }
-    while (checkWinCondition(tubes)) {
-        if (!applyFullTubeExchange(tubes, rng)) {
-            throw new Error('unable to generate an unsolved puzzle');
+
+    const tubes = createSolvedState(config);
+    const buffer = filledTubeCount;
+    const pairedTubeCount = filledTubeCount % 2 === 0 ? filledTubeCount : filledTubeCount - 3;
+    for (let from = 0; from < pairedTubeCount; from += 2) {
+        const amount = 1 + Math.floor(rng() * (capacity - 1));
+        exchangeFullTubeSegments(tubes, from, from + 1, buffer, amount);
+    }
+
+    if (filledTubeCount % 2 !== 0) {
+        const first = filledTubeCount - 3;
+        const second = filledTubeCount - 2;
+        const third = filledTubeCount - 1;
+        if (numColors === 2) {
+            const amount = 2 + Math.floor(rng() * (capacity - 2));
+            exchangeFullTubeSegments(tubes, first, second, buffer, amount);
+            exchangeFullTubeSegments(tubes, third, first, buffer, 1);
+        } else {
+            exchangeFullTubeSegments(tubes, first, second, buffer, 1);
+            exchangeFullTubeSegments(tubes, third, first, buffer, 1);
         }
+    }
+
+    if (!everyOccupiedTubeIsMixed(tubes)) {
+        throw new Error('unable to generate a puzzle with every occupied tube mixed');
     }
     return tubes;
 }
@@ -319,12 +321,15 @@ export function validateConfig(rawConfig) {
     if (numTubes < numColors + 1) {
         numTubes = Math.min(CONFIG_BOUNDS.numTubes.max, numColors + 1);
     }
-    const emptyTubes = clampInt(
+    let emptyTubes = clampInt(
         cfg.emptyTubes,
         CONFIG_BOUNDS.emptyTubes.min,
         Math.min(CONFIG_BOUNDS.emptyTubes.max, numTubes - numColors),
         DEFAULT_CONFIG.emptyTubes
     );
+    if (numColors === 2 && capacity === 2 && (numTubes - emptyTubes) % 2 !== 0) {
+        emptyTubes++;
+    }
 
     return { numColors, numTubes, capacity, emptyTubes };
 }

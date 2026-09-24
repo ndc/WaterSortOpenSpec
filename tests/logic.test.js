@@ -152,13 +152,16 @@ test('generatePuzzle: produces solvable puzzles across configs', () => {
 // only ever relocate whole same-color tubes and therefore always produced an
 // already-solved board. A correct generator must produce unsolved puzzles
 // with genuinely mixed tubes.
-test('generatePuzzle: result is not already solved and contains genuinely mixed tubes', () => {
+test('generatePuzzle: result is not already solved and every occupied tube is genuinely mixed', () => {
     const config = { numColors: 4, numTubes: 6, capacity: 4, emptyTubes: 1 };
     for (let i = 0; i < 20; i++) {
         const tubes = generatePuzzle(config);
         assert.equal(checkWinCondition(tubes), false, 'freshly generated puzzle must not already be solved');
-        const hasMixedTube = tubes.some((t) => new Set(t.contents).size > 1);
-        assert.equal(hasMixedTube, true, 'at least one tube should contain more than one color');
+        assert.equal(
+            tubes.every((t) => t.isEmpty() || new Set(t.contents).size >= 2),
+            true,
+            'every occupied tube should contain at least two colors'
+        );
     }
 });
 
@@ -174,6 +177,7 @@ test('generatePuzzle: honors exact empty-tube count and starts every other tube 
             assert.equal(tubes.filter((t) => t.isEmpty()).length, config.emptyTubes);
             assert.equal(tubes.filter((t) => !t.isEmpty() && t.isFull()).length, config.numTubes - config.emptyTubes);
             assert.equal(tubes.some((t) => !t.isEmpty() && !t.isFull()), false);
+            assert.equal(tubes.every((t) => t.isEmpty() || new Set(t.contents).size >= 2), true);
         }
     });
 });
@@ -251,6 +255,13 @@ test('validateConfig: clamps out-of-range and non-integer values', () => {
     assert.ok(cfg.numTubes <= 20);
     assert.ok(cfg.numTubes >= cfg.numColors + 1);
     assert.equal(cfg.emptyTubes, cfg.numTubes - cfg.numColors);
+});
+
+test('validateConfig: normalizes an impossible two-color, capacity-two layout', () => {
+    const cfg = validateConfig({ numColors: 2, numTubes: 4, capacity: 2, emptyTubes: 1 });
+    assert.equal(cfg.emptyTubes, 2);
+    const tubes = generatePuzzle(cfg);
+    assert.equal(tubes.every((tube) => tube.isEmpty() || new Set(tube.contents).size >= 2), true);
 });
 
 test('validateConfig: rejects non-numeric input via fallback to defaults', () => {
