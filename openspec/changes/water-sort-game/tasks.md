@@ -17,6 +17,7 @@
 - [x] 3.3 Implement getRandomValidMove() to find all valid moves from a state and return one randomly. Verify it only returns legal moves.
 - [x] 3.4 Implement puzzle generation algorithm: create a solved state, then apply a fixed number of random "shuffle moves" that are reversible by construction (not ordinary valid pours - see design.md Decision 1). Verify generated puzzles are solvable and never already satisfy the win condition, with at least one genuinely mixed (multi-color) tube.
 - [x] 3.5 Fix puzzle generation to target a specific occupied-tube count instead of leaving it to an unbiased shuffle: add spread moves (peel exactly 1 unit onto an empty tube) and guard shuffle moves so they never destroy more spread potential than can be recovered before reaching the target (see design.md Decisions 1-2). Verify occupied-tube count reliably reaches the target across configs, including configs where numTubes is much larger than numColors.
+- [x] 3.6 Make empty-tube count a configurable puzzle parameter (default 1), and replace partial-tube spread generation with reversible full-tube exchanges through an empty buffer. Verify generated boards contain exactly the requested number of empty tubes and every other tube is full.
 
 ## 4. Game Logic and Rules
 
@@ -49,4 +50,3 @@
 - [x] 8.1 Test complete game flow: load page, see default config, generate puzzle, make valid moves, receive feedback on invalid moves, undo moves, check win condition, restart, generate new puzzle. Verify all steps work end-to-end.
 - [x] 8.2 Test puzzle generation reliability: generate multiple puzzles with various configs and verify all are solvable (i.e., a solution exists). Verify no unsolvable puzzles are created.
 - [x] 8.3 Test edge cases: single color puzzle, puzzle with all empty tubes at end, maximum capacity tubes, undo all the way to start. Verify all edge cases work correctly.
-

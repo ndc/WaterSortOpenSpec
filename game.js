@@ -170,258 +170,90 @@ export function checkWinCondition(tubes) {
 }
 
 // ---- Puzzle generation ----
-// Builds a fully solved board: each color fills exactly one tube, remaining
-// tubes are empty. Requires numTubes >= numColors. Used as the starting
+// Builds a fully solved board with the requested number of empty tubes.
+// Every remaining tube is full and monochrome; colors repeat across full
+// tubes when there are more filled tubes than colors. Used as the starting
 // point for generatePuzzle() below, and as a test/reference utility.
 export function createSolvedState(config) {
     const { numColors, numTubes, capacity } = config;
-    if (numTubes < numColors) {
-        throw new Error('numTubes must be >= numColors to hold a solved state');
+    const emptyTubes = config.emptyTubes ?? DEFAULT_CONFIG.emptyTubes;
+    const filledTubeCount = numTubes - emptyTubes;
+    if (filledTubeCount < numColors) {
+        throw new Error('at least one full tube is required for each color');
     }
     const colors = getColorPalette(numColors);
     const tubes = [];
     let i;
-    for (i = 0; i < numColors; i++) {
-        tubes.push(new Tube(capacity, new Array(capacity).fill(colors[i])));
+    for (i = 0; i < filledTubeCount; i++) {
+        tubes.push(new Tube(capacity, new Array(capacity).fill(colors[i % numColors])));
     }
-    for (i = numColors; i < numTubes; i++) {
+    for (i = filledTubeCount; i < numTubes; i++) {
         tubes.push(new Tube(capacity, []));
     }
     return tubes;
 }
 
-// Finds every (source, destination, maxAmount) triple that is safe to use as
-// a "shuffle move" (see applyShuffleMove) in the given tube arrangement.
-function findShuffleCandidates(tubes) {
+// Swaps top-color segments between two full tubes through an empty buffer.
+// All three generation-only transfers are reversed by valid player pours:
+// destination -> buffer, source -> destination, then buffer -> source.
+// This preserves both the number of empty tubes and the invariant that every
+// occupied tube is full, while still creating mixed tubes.
+function applyFullTubeExchange(tubes, rng) {
+    const emptyIndices = tubes
+        .map((tube, index) => tube.isEmpty() ? index : -1)
+        .filter((index) => index !== -1);
     const candidates = [];
     for (let from = 0; from < tubes.length; from++) {
-        const src = tubes[from];
-        if (src.isEmpty()) continue;
-        const runLength = src.topRunLength();
-        // Moving the *entire* top run is only safe when it is all of the
-        // tube's contents (the tube becomes empty, not "a different color
-        // exposed"). Otherwise at least one unit of the run must stay behind
-        // so the tube's exposed top color does not change. See
-        // applyShuffleMove for why this is what guarantees reversibility.
-        // This phase runs *before* the spread phase (see generatePuzzle), so
-        // it is free to fully drain tubes and use empty destinations - any
-        // resulting dip in occupied-tube count is topped back up afterward.
-        const safeMax = runLength === src.contents.length ? runLength : runLength - 1;
-        if (safeMax < 1) continue;
+        if (!tubes[from].isFull()) continue;
         for (let to = 0; to < tubes.length; to++) {
-            if (to === from) continue;
-            const room = tubes[to].capacity - tubes[to].contents.length;
-            if (room < 1) continue;
-            candidates.push({ from, to, maxAmount: Math.min(safeMax, room) });
+            if (to === from || !tubes[to].isFull() || tubes[from].getTop() === tubes[to].getTop()) continue;
+            const maxAmount = Math.min(
+                tubes[from].topRunLength(),
+                tubes[to].topRunLength(),
+                tubes[from].capacity - 1
+            );
+            if (maxAmount > 0) candidates.push({ from, to, maxAmount });
         }
     }
-    return candidates;
-}
+    if (emptyIndices.length === 0 || candidates.length === 0) return false;
 
-// Like findShuffleCandidates, but restricted to moves that grow the number
-// of occupied tubes: the destination must be genuinely empty, and the moved
-// amount is always exactly 1 unit (see applySpreadMove for why). A tube can
-// be a source only if its top run holds at least 2 units of the same color,
-// so peeling 1 off still leaves at least 1 behind - both keeping the source
-// occupied and leaving its exposed top color unchanged (the reversibility
-// requirement shared with shuffle moves; see applyMoveFromCandidates).
-function findSpreadCandidates(tubes) {
-    const candidates = [];
-    for (let from = 0; from < tubes.length; from++) {
-        if (tubes[from].topRunLength() < 2) continue;
-        for (let to = 0; to < tubes.length; to++) {
-            if (to === from || !tubes[to].isEmpty()) continue;
-            candidates.push({ from, to });
-        }
-    }
-    return candidates;
-}
-
-// Shared executor for both move kinds above: picks a random candidate and
-// applies it in place, moving `fixedAmount` units if given, otherwise a
-// random amount within the candidate's cap.
-//
-// The amount moved (whether fixed or randomly capped by the caller) always
-// leaves the source tube's exposed top color unchanged. That is exactly what
-// guarantees the move can always be undone later by a single valid *player*
-// pour: immediately after the move, the destination's top is the color that
-// was just added (so pouring it back out is legal), and the source's top is
-// still the same color it was before (empty, or unchanged - so pouring back
-// onto it is legal too). Chaining these reversals in reverse chronological
-// order therefore always reconstructs the solved state through nothing but
-// valid player moves, which is what proves every generated puzzle is
-// solvable - without needing to run a separate solver.
-//
-// Returns false (and changes nothing) if there are no candidates.
-function applyMoveFromCandidates(tubes, rng, candidates, fixedAmount) {
-    if (candidates.length === 0) return false;
     const choice = candidates[Math.floor(rng() * candidates.length)];
-    const amount = fixedAmount ?? 1 + Math.floor(rng() * choice.maxAmount);
-    const src = tubes[choice.from];
-    const dst = tubes[choice.to];
-    const color = src.getTop();
-    src.remove(amount);
-    dst.add(color, amount);
+    const buffer = emptyIndices[Math.floor(rng() * emptyIndices.length)];
+    const amount = 1 + Math.floor(rng() * choice.maxAmount);
+    const source = tubes[choice.from];
+    const destination = tubes[choice.to];
+    const temporary = tubes[buffer];
+    const sourceColor = source.getTop();
+    const destinationColor = destination.getTop();
+
+    source.remove(amount);
+    temporary.add(sourceColor, amount);
+    destination.remove(amount);
+    source.add(destinationColor, amount);
+    temporary.remove(amount);
+    destination.add(sourceColor, amount);
     return true;
 }
 
-// Applies one random "shuffle move" in place: moves a capped amount of the
-// top color from a random source tube to a random destination tube, WITHOUT
-// requiring the destination's top color to match the source's (unlike a real
-// player pour - see isValidMove). This is what allows one color to end up
-// stacked on top of a *different* color, i.e. genuine mixing.
-function applyShuffleMove(tubes, rng) {
-    return applyMoveFromCandidates(tubes, rng, findShuffleCandidates(tubes));
-}
-
-// Applies one random "spread move": like applyShuffleMove, but restricted to
-// growing the number of occupied tubes (see findSpreadCandidates). Always
-// moves exactly 1 unit: peeling off the minimum possible amount each time
-// means a single source tube can seed multiple new occupied tubes (its top
-// run shrinks by only 1 each time, so it can stay a valid spread source
-// across several moves) instead of exhausting its "spreadability" in one
-// large jump. That is what lets the spread phase reliably reach its target
-// occupied-tube count instead of stalling far short of it.
-function applySpreadMove(tubes, rng) {
-    return applyMoveFromCandidates(tubes, rng, findSpreadCandidates(tubes), 1);
-}
-
-function countOccupiedTubes(tubes) {
-    return tubes.reduce((count, t) => count + (t.isEmpty() ? 0 : 1), 0);
-}
-
-// Sum, across all tubes, of how many more times each could still act as a
-// spread-move source (see findSpreadCandidates) before its top run shrinks
-// to a single unit and it becomes permanently ineligible. This is exactly
-// the number of additional occupied tubes that could still be created by
-// spreading alone, regardless of which eligible tubes are actually chosen -
-// see applyGuardedShuffleMove for why that makes it useful as a safety
-// check.
-function totalSpreadPotential(tubes) {
-    return tubes.reduce((sum, t) => sum + (t.isEmpty() ? 0 : t.topRunLength() - 1), 0);
-}
-
-// Like applyShuffleMove, but only accepts a randomly chosen candidate if,
-// after applying it, there would still be enough spread potential (see
-// totalSpreadPotential) left to reach `occupiedTarget` via spreading alone.
-// Plain unbiased mixing has no such safeguard: it is just as likely to
-// merge two differently-colored single-unit tubes together (permanently
-// destroying both units' spread potential, since the resulting tube's top
-// run is only 1 unit of a color that differs from what is beneath it) as
-// it is to do anything else, and repeatedly doing so is what collapses
-// occupied-tube count back down to the low equilibrium generatePuzzle's
-// spread phase exists to avoid - even when interleaved with periodic
-// top-ups (see generatePuzzle), because by the time a top-up runs, the
-// potential it would have needed may already be gone. Guarding each
-// individual move, rather than only checking after the fact, is what keeps
-// that from happening. Tries a handful of random candidates before giving
-// up and returning false (meaning: no safe move found this round).
-function applyGuardedShuffleMove(tubes, rng, occupiedTarget) {
-    const candidates = findShuffleCandidates(tubes);
-    if (candidates.length === 0) return false;
-    const maxAttempts = Math.min(candidates.length, 10);
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const choice = candidates[Math.floor(rng() * candidates.length)];
-        const amount = 1 + Math.floor(rng() * choice.maxAmount);
-        const src = tubes[choice.from];
-        const dst = tubes[choice.to];
-        const color = src.getTop();
-        src.remove(amount);
-        dst.add(color, amount);
-        const gap = occupiedTarget - countOccupiedTubes(tubes);
-        if (totalSpreadPotential(tubes) >= gap) {
-            return true;
-        }
-        // Not safe - undo and try a different candidate.
-        dst.remove(amount);
-        src.add(color, amount);
-    }
-    return false;
-}
-
-// Generates a puzzle by starting from a solved state (see createSolvedState)
-// and repeatedly applying random moves that are reversible by construction
-// (see applyShuffleMove / applySpreadMove).
-//
-// This deliberately does NOT build the puzzle by applying ordinary valid
-// pour moves (pourWater/isValidMove) in reverse. A valid pour can only ever
-// move an already-homogeneous run of one color onto an empty tube or onto a
-// matching top color - it can never introduce a NEW boundary between two
-// different colors within a tube. So starting from a solved state (every
-// tube monochrome-or-empty) and only ever applying valid pours can only ever
-// reach OTHER monochrome-or-empty states: colors end up relocated to
-// different tubes, but every tube still holds a single color, which is
-// already a win by checkWinCondition(). That was the cause of puzzles
-// appearing "already sorted" at the start of the game. applyShuffleMove
-// lifts the color-matching restriction (while still capping the transfer
-// amount to stay provably reversible), which is what actually produces tubes
-// with different colors stacked on top of each other.
-//
-// Generation interleaves two kinds of moves:
-//   - Mix (applyGuardedShuffleMove): an unbiased shuffle that produces the
-//     actual color mixing within tubes, guarded so it never accepts a move
-//     that would leave too little spread potential to still reach
-//     `occupiedTarget` (see applyGuardedShuffleMove). Without that guard,
-//     plain unbiased mixing settles into a statistical equilibrium
-//     occupied-tube count that depends only on capacity/color counts, not
-//     on `numTubes` or how many moves are run (more moves does not change
-//     it) - or can even run itself into a dead end where no further move of
-//     any kind is possible. When numTubes is much larger than numColors
-//     that equilibrium leaves most tubes empty, which made puzzles
-//     trivially easy: abundant empty tubes are unlimited "workspace" for
-//     the player.
-//   - Spread (applySpreadMove): deterministically grows the occupied-tube
-//     count by peeling exactly 1 unit off some tube's top run into an empty
-//     tube. Peeling only 1 unit at a time (rather than a random amount) is
-//     what lets a single source tube seed several new occupied tubes
-//     instead of exhausting its "spreadability" in one large jump.
-//
-// An up-front top-up reaches `occupiedTarget` (at most `emptyTubes` tubes
-// left empty, default 2 - matching typical water-sort puzzles, and chosen
-// so the default config's own natural equilibrium is unaffected) from the
-// pristine solved state, where doing so is always fully achievable. Mixing
-// then runs move-by-move, with a top-up after each one: the guard makes
-// sure a top-up is always able to fully close whatever gap the preceding
-// mix move opened, so occupied-tube count is effectively held at
-// `occupiedTarget` for the rest of generation instead of drifting back
-// toward the unbiased equilibrium.
+// Generates a puzzle from a solved board by exchanging top-color segments
+// through an empty tube. Unlike ordinary valid-pour replay, these exchanges
+// create mixed tubes; unlike the prior spread/shuffle strategy, they retain
+// the exact configured empty-tube count and leave every occupied tube full.
+// Each exchange has a three-pour valid-player inverse, so the puzzle remains
+// solvable by construction without invoking the BFS solver at runtime.
 export function generatePuzzle(config, options = {}) {
     const rng = options.rng || Math.random;
-    const { numColors, numTubes, capacity } = config;
-    const totalUnits = numColors * capacity;
-    const desiredEmptyTubes = options.emptyTubes ?? 2;
-    // Can't occupy more tubes than there are units to fill them with, and
-    // never fewer than the solved state's own tube count.
-    const occupiedTarget = Math.min(totalUnits, Math.max(numColors, numTubes - desiredEmptyTubes));
-
+    const { numColors, capacity } = config;
     const tubes = createSolvedState(config);
-
-    function topUpOccupancy() {
-        let needed = occupiedTarget - countOccupiedTubes(tubes);
-        while (needed > 0) {
-            if (!applySpreadMove(tubes, rng)) break;
-            needed--;
+    const shuffleMoves = options.shuffleMoves || Math.max(12, numColors * capacity * 2);
+    for (let i = 0; i < shuffleMoves; i++) {
+        if (!applyFullTubeExchange(tubes, rng)) break;
+    }
+    while (checkWinCondition(tubes)) {
+        if (!applyFullTubeExchange(tubes, rng)) {
+            throw new Error('unable to generate an unsolved puzzle');
         }
     }
-
-    const shuffleMoves = options.shuffleMoves || Math.max(40, numColors * capacity * 4, occupiedTarget * 6);
-    topUpOccupancy();
-    for (let i = 0; i < shuffleMoves; i++) {
-        if (!applyGuardedShuffleMove(tubes, rng, occupiedTarget)) break;
-        topUpOccupancy();
-    }
-
-    // Defensive fallback: a freshly generated board should never already be
-    // solved (even the degenerate numColors === 1 case can land back on a
-    // single full tube purely by chance). This should be rare. Prefer a
-    // spread move so occupied-tube count is never undone by this rare path;
-    // fall back to an ordinary shuffle move if no spread move is available.
-    let extraAttempts = 0;
-    while (checkWinCondition(tubes) && extraAttempts < 50) {
-        if (!applySpreadMove(tubes, rng) && !applyShuffleMove(tubes, rng)) break;
-        extraAttempts++;
-    }
-
     return tubes;
 }
 
@@ -461,11 +293,12 @@ export function serializeTubes(tubes) {
 }
 
 // ---- Configuration defaults & validation ----
-export const DEFAULT_CONFIG = { numColors: 4, numTubes: 6, capacity: 4 };
+export const DEFAULT_CONFIG = { numColors: 4, numTubes: 6, capacity: 4, emptyTubes: 1 };
 export const CONFIG_BOUNDS = {
-    numColors: { min: 1, max: COLOR_PALETTE.length },
+    numColors: { min: 2, max: COLOR_PALETTE.length },
     numTubes: { min: 3, max: 20 },
-    capacity: { min: 2, max: 12 }
+    capacity: { min: 2, max: 12 },
+    emptyTubes: { min: 1, max: 19 }
 };
 
 function clampInt(value, min, max, fallback) {
@@ -474,8 +307,9 @@ function clampInt(value, min, max, fallback) {
     return Math.min(max, Math.max(min, n));
 }
 
-// Clamps raw (possibly invalid) config input to safe integer bounds and
-// ensures at least one empty tube exists so generation/moves are possible.
+// Clamps raw (possibly invalid) config input to safe integer bounds. At least
+// one empty tube is always retained, and every configured color is assigned
+// at least one full tube in the solved state.
 export function validateConfig(rawConfig) {
     const cfg = { ...DEFAULT_CONFIG, ...rawConfig };
     const numColors = clampInt(cfg.numColors, CONFIG_BOUNDS.numColors.min, CONFIG_BOUNDS.numColors.max, DEFAULT_CONFIG.numColors);
@@ -485,6 +319,12 @@ export function validateConfig(rawConfig) {
     if (numTubes < numColors + 1) {
         numTubes = Math.min(CONFIG_BOUNDS.numTubes.max, numColors + 1);
     }
+    const emptyTubes = clampInt(
+        cfg.emptyTubes,
+        CONFIG_BOUNDS.emptyTubes.min,
+        Math.min(CONFIG_BOUNDS.emptyTubes.max, numTubes - numColors),
+        DEFAULT_CONFIG.emptyTubes
+    );
 
-    return { numColors, numTubes, capacity };
+    return { numColors, numTubes, capacity, emptyTubes };
 }

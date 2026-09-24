@@ -9,6 +9,7 @@ const ctx = canvas.getContext('2d');
 const colorsInput = document.getElementById('configColors');
 const tubesInput = document.getElementById('configTubes');
 const capacityInput = document.getElementById('configCapacity');
+const emptyTubesInput = document.getElementById('configEmptyTubes');
 const newGameBtn = document.getElementById('newGameBtn');
 const undoBtn = document.getElementById('undoBtn');
 const restartBtn = document.getElementById('restartBtn');
@@ -142,7 +143,8 @@ function readConfigInputs() {
     return {
         numColors: colorsInput.value,
         numTubes: tubesInput.value,
-        capacity: capacityInput.value
+        capacity: capacityInput.value,
+        emptyTubes: emptyTubesInput.value
     };
 }
 
@@ -150,6 +152,7 @@ function writeConfigInputs(config) {
     colorsInput.value = config.numColors;
     tubesInput.value = config.numTubes;
     capacityInput.value = config.capacity;
+    emptyTubesInput.value = config.emptyTubes;
 }
 
 // ---- Game actions (6.3, 6.4, 6.5) ----

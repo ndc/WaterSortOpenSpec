@@ -72,13 +72,16 @@
          drawing them on canvas) for native accessibility and validation. -->
     <div id="configPanel">
         <label for="configColors">Colors
-            <input type="number" id="configColors" min="1" max="16" value="4">
+            <input type="number" id="configColors" min="2" max="16" value="4">
         </label>
         <label for="configTubes">Tubes
             <input type="number" id="configTubes" min="3" max="20" value="6">
         </label>
         <label for="configCapacity">Capacity
             <input type="number" id="configCapacity" min="2" max="12" value="4">
+        </label>
+        <label for="configEmptyTubes">Empty tubes
+            <input type="number" id="configEmptyTubes" min="1" max="19" value="1">
         </label>
     </div>
     <!-- Only the tubes and their water contents are drawn to this canvas by app.js. -->

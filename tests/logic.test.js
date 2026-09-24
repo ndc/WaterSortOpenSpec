@@ -73,13 +73,13 @@ test('Color palette: consistent hex assignment', () => {
 
 // ---- createSolvedState (3.1) ----
 test('createSolvedState: correct tube distribution', () => {
-    const config = { numColors: 4, numTubes: 6, capacity: 4 };
+    const config = { numColors: 4, numTubes: 6, capacity: 4, emptyTubes: 1 };
     const tubes = createSolvedState(config);
     assert.equal(tubes.length, 6);
     const full = tubes.filter((t) => t.isMonochromeFull());
     const empty = tubes.filter((t) => t.isEmpty());
-    assert.equal(full.length, 4);
-    assert.equal(empty.length, 2);
+    assert.equal(full.length, 5);
+    assert.equal(empty.length, 1);
     assert.equal(checkWinCondition(tubes), true);
 });
 
@@ -134,11 +134,10 @@ test('getRandomValidMove: only returns legal moves', () => {
 // ---- Puzzle generation + solvability (3.4, 8.2) ----
 test('generatePuzzle: produces solvable puzzles across configs', () => {
     const configs = [
-        { numColors: 2, numTubes: 4, capacity: 4 },
-        { numColors: 4, numTubes: 6, capacity: 4 },
-        { numColors: 6, numTubes: 8, capacity: 4 },
-        { numColors: 1, numTubes: 3, capacity: 4 },
-        { numColors: 2, numTubes: 8, capacity: 3 } // many spare tubes relative to numColors
+        { numColors: 2, numTubes: 3, capacity: 3, emptyTubes: 1 },
+        { numColors: 2, numTubes: 4, capacity: 4, emptyTubes: 2 },
+        { numColors: 4, numTubes: 6, capacity: 4, emptyTubes: 2 },
+        { numColors: 6, numTubes: 8, capacity: 4, emptyTubes: 2 }
     ];
     configs.forEach((config) => {
         for (let i = 0; i < 5; i++) {
@@ -154,7 +153,7 @@ test('generatePuzzle: produces solvable puzzles across configs', () => {
 // already-solved board. A correct generator must produce unsolved puzzles
 // with genuinely mixed tubes.
 test('generatePuzzle: result is not already solved and contains genuinely mixed tubes', () => {
-    const config = { numColors: 4, numTubes: 6, capacity: 4 };
+    const config = { numColors: 4, numTubes: 6, capacity: 4, emptyTubes: 1 };
     for (let i = 0; i < 20; i++) {
         const tubes = generatePuzzle(config);
         assert.equal(checkWinCondition(tubes), false, 'freshly generated puzzle must not already be solved');
@@ -163,33 +162,20 @@ test('generatePuzzle: result is not already solved and contains genuinely mixed 
     }
 });
 
-// Regression test for the "too many empty tubes" bug: an unbiased shuffle
-// converges to a low occupied-tube-count equilibrium regardless of how many
-// spare tubes are available, so configs with numTubes >> numColors used to
-// generate puzzles that were far too easy (e.g. 16/20 tubes left empty for
-// 4 colors/20 tubes/capacity 4). A correct generator must reliably occupy
-// close to numTubes - emptyTubes tubes.
-//
-// This does not also re-check isSolvable here: BFS verification is only
-// practical at the small scale used by the test above - at this config's
-// scale the reachable state space is large enough that isSolvable's search
-// budget is exhausted long before it can confirm or refute a solution,
-// making it both too slow for a unit test and prone to false negatives.
-// Solvability at this scale relies on generatePuzzle's construction
-// guarantee instead (see the comment above generatePuzzle).
-test('generatePuzzle: occupies close to the target tube count even with many spare tubes', () => {
-    const config = { numColors: 4, numTubes: 20, capacity: 4 };
-    // Mirrors generatePuzzle's own occupiedTarget formula: never more tubes
-    // occupied than there are total units to fill them with (here, 16), even
-    // though numTubes - emptyTubes would otherwise ask for 18.
-    const totalUnits = config.numColors * config.capacity;
-    const target = Math.min(totalUnits, config.numTubes - 2); // default desiredEmptyTubes is 2
-    for (let i = 0; i < 10; i++) {
-        const tubes = generatePuzzle(config);
-        assert.equal(checkWinCondition(tubes), false, 'freshly generated puzzle must not already be solved');
-        const occupied = tubes.filter((t) => t.contents.length > 0).length;
-        assert.ok(occupied >= target, `expected at least ${target} occupied tubes, got ${occupied}`);
-    }
+test('generatePuzzle: honors exact empty-tube count and starts every other tube full', () => {
+    const configs = [
+        { numColors: 4, numTubes: 20, capacity: 4, emptyTubes: 1 },
+        { numColors: 4, numTubes: 6, capacity: 4, emptyTubes: 2 }
+    ];
+    configs.forEach((config) => {
+        for (let i = 0; i < 10; i++) {
+            const tubes = generatePuzzle(config);
+            assert.equal(checkWinCondition(tubes), false, 'freshly generated puzzle must not already be solved');
+            assert.equal(tubes.filter((t) => t.isEmpty()).length, config.emptyTubes);
+            assert.equal(tubes.filter((t) => !t.isEmpty() && t.isFull()).length, config.numTubes - config.emptyTubes);
+            assert.equal(tubes.some((t) => !t.isEmpty() && !t.isFull()), false);
+        }
+    });
 });
 
 // ---- pourWater (4.1) ----
@@ -259,11 +245,12 @@ test('validateConfig: defaults applied when config omitted', () => {
 });
 
 test('validateConfig: clamps out-of-range and non-integer values', () => {
-    const cfg = validateConfig({ numColors: -5, numTubes: 1000, capacity: 0.4 });
-    assert.equal(cfg.numColors, 1);
+    const cfg = validateConfig({ numColors: -5, numTubes: 1000, capacity: 0.4, emptyTubes: 999 });
+    assert.equal(cfg.numColors, 2);
     assert.equal(cfg.capacity, 2);
     assert.ok(cfg.numTubes <= 20);
     assert.ok(cfg.numTubes >= cfg.numColors + 1);
+    assert.equal(cfg.emptyTubes, cfg.numTubes - cfg.numColors);
 });
 
 test('validateConfig: rejects non-numeric input via fallback to defaults', () => {
@@ -273,10 +260,9 @@ test('validateConfig: rejects non-numeric input via fallback to defaults', () =>
 });
 
 // ---- Edge cases (8.3) ----
-test('edge case: single color puzzle is trivially solvable', () => {
-    const config = { numColors: 1, numTubes: 3, capacity: 4 };
-    const tubes = generatePuzzle(config);
-    assert.equal(isSolvable(tubes), true);
+test('edge case: a one-color input is clamped to two colors', () => {
+    const config = validateConfig({ numColors: 1, numTubes: 3, capacity: 4, emptyTubes: 1 });
+    assert.equal(config.numColors, 2);
 });
 
 test('edge case: all empty tubes counts as solved', () => {

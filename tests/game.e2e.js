@@ -38,37 +38,67 @@ async function clickTube(page, index) {
     await clickAt(page, rect.x + rect.width / 2, rect.y + rect.height / 2);
 }
 
-async function setConfig(page, numColors, numTubes, capacity) {
+async function setConfig(page, numColors, numTubes, capacity, emptyTubes = 1) {
     await page.fill('#configColors', String(numColors));
     await page.fill('#configTubes', String(numTubes));
     await page.fill('#configCapacity', String(capacity));
+    await page.fill('#configEmptyTubes', String(emptyTubes));
 }
 
-// Solves a single-color puzzle (any pour between two tubes is always valid
-// for one color, so the color may be spread across more than two tubes -
-// see game.js generatePuzzle) by repeatedly pouring the least-full tube into
-// the most-full tube with room, until solved or maxPours is reached.
-async function solveSingleColor(page, maxPours) {
-    let dbg = await getDebug(page);
-    let pours = 0;
-    while (!dbg.won && pours < maxPours) {
-        const contents = dbg.state.tubes.map((t) => t.contents.length);
-        const capacities = dbg.state.tubes.map((t) => t.capacity);
-        let from = -1, to = -1;
-        for (let i = 0; i < contents.length; i++) {
-            if (contents[i] === 0) continue;
-            if (from === -1 || contents[i] < contents[from]) from = i;
+async function solvePuzzle(page, maxStates = 10000) {
+    const initial = await getDebug(page);
+    const serialize = (tubes) => tubes.map((tube) => tube.contents.join(',')).join('|');
+    const isSolved = (tubes) => tubes.every((tube) =>
+        tube.contents.length === 0 ||
+        (tube.contents.length === tube.capacity && tube.contents.every((color) => color === tube.contents[0]))
+    );
+    const queue = [{ tubes: initial.state.tubes, path: [], states: [] }];
+    const visited = new Set([serialize(initial.state.tubes)]);
+    let solution = null;
+    let solutionStates = null;
+
+    while (queue.length > 0 && visited.size < maxStates) {
+        const current = queue.shift();
+        if (isSolved(current.tubes)) {
+            solution = current.path;
+            solutionStates = current.states;
+            break;
         }
-        for (let i = 0; i < contents.length; i++) {
-            if (i === from || contents[i] >= capacities[i]) continue;
-            if (to === -1 || contents[i] > contents[to]) to = i;
+        for (let from = 0; from < current.tubes.length; from++) {
+            const source = current.tubes[from];
+            if (source.contents.length === 0) continue;
+            const color = source.contents[source.contents.length - 1];
+            let runLength = 0;
+            for (let i = source.contents.length - 1; i >= 0 && source.contents[i] === color; i--) runLength++;
+            for (let to = 0; to < current.tubes.length; to++) {
+                const destination = current.tubes[to];
+                if (from === to || destination.contents.length === destination.capacity) continue;
+                if (destination.contents.length > 0 && destination.contents[destination.contents.length - 1] !== color) continue;
+                const moved = Math.min(runLength, destination.capacity - destination.contents.length);
+                const tubes = current.tubes.map((tube) => ({ ...tube, contents: tube.contents.slice() }));
+                tubes[from].contents.splice(tubes[from].contents.length - moved, moved);
+                tubes[to].contents.push(...new Array(moved).fill(color));
+                const key = serialize(tubes);
+                if (!visited.has(key)) {
+                    visited.add(key);
+                    queue.push({
+                        tubes,
+                        path: [...current.path, [from, to]],
+                        states: [...current.states, tubes]
+                    });
+                }
+            }
         }
+    }
+    expect(solution).not.toBeNull();
+    for (let i = 0; i < solution.length; i++) {
+        const [from, to] = solution[i];
         await clickTube(page, from);
         await clickTube(page, to);
-        dbg = await getDebug(page);
-        pours++;
+        const actual = await getDebug(page);
+        expect(serialize(actual.state.tubes)).toBe(serialize(solutionStates[i]));
     }
-    return { dbg, pours };
+    return { dbg: await getDebug(page), pours: solution.length };
 }
 
 test.describe('Water Sort Puzzle end-to-end (tasks 8.1-8.3)', () => {
@@ -78,6 +108,7 @@ test.describe('Water Sort Puzzle end-to-end (tasks 8.1-8.3)', () => {
         await expect(page.locator('#configColors')).toHaveValue('4');
         await expect(page.locator('#configTubes')).toHaveValue('6');
         await expect(page.locator('#configCapacity')).toHaveValue('4');
+        await expect(page.locator('#configEmptyTubes')).toHaveValue('1');
 
         // Buttons are native HTML elements outside the canvas, not canvas-drawn.
         await expect(page.locator('#newGameBtn')).toBeVisible();
@@ -85,20 +116,20 @@ test.describe('Water Sort Puzzle end-to-end (tasks 8.1-8.3)', () => {
         await expect(page.locator('#restartBtn')).toBeVisible();
 
         const dbg = await getDebug(page);
-        expect(dbg.state.config).toEqual({ numColors: 4, numTubes: 6, capacity: 4 });
+        expect(dbg.state.config).toEqual({ numColors: 4, numTubes: 6, capacity: 4, emptyTubes: 1 });
         expect(dbg.layout.tubeRects.length).toBe(6);
     });
 
     test('8.1: full flow - new game, valid pour, win, undo, restart', async ({ page }) => {
         await page.goto('/');
-        await setConfig(page, 1, 3, 4);
+        await setConfig(page, 2, 3, 4);
         await page.click('#newGameBtn');
 
         let dbg = await getDebug(page);
-        expect(dbg.state.config).toEqual({ numColors: 1, numTubes: 3, capacity: 4 });
+        expect(dbg.state.config).toEqual({ numColors: 2, numTubes: 3, capacity: 4, emptyTubes: 1 });
         expect(dbg.won).toBe(false);
 
-        let result = await solveSingleColor(page, 10);
+        let result = await solvePuzzle(page);
         dbg = result.dbg;
         expect(dbg.won).toBe(true);
         expect(result.pours).toBeGreaterThan(0);
@@ -116,7 +147,7 @@ test.describe('Water Sort Puzzle end-to-end (tasks 8.1-8.3)', () => {
         // Redo the same winning sequence (deterministic from the now-restored
         // initial state), then restart and confirm it returns to the initial
         // unsolved puzzle with history cleared.
-        result = await solveSingleColor(page, 10);
+        result = await solvePuzzle(page);
         expect(result.dbg.won).toBe(true);
 
         await page.click('#restartBtn');
@@ -157,7 +188,7 @@ test.describe('Water Sort Puzzle end-to-end (tasks 8.1-8.3)', () => {
 
     test('7.2/6.3: out-of-range config is clamped when starting a new game', async ({ page }) => {
         await page.goto('/');
-        await setConfig(page, 999, 1, 0);
+        await setConfig(page, 999, 1, 0, 999);
         await page.click('#newGameBtn');
 
         await expect(page.locator('#configColors')).toHaveValue('16');
@@ -165,18 +196,21 @@ test.describe('Water Sort Puzzle end-to-end (tasks 8.1-8.3)', () => {
         expect(dbg.state.config.numColors).toBe(16);
         expect(dbg.state.config.capacity).toBeGreaterThanOrEqual(2);
         expect(dbg.state.config.numTubes).toBeGreaterThan(dbg.state.config.numColors);
+        expect(dbg.state.config.emptyTubes).toBe(1);
     });
 
     test('8.2: puzzle generation stays playable across varied configs', async ({ page }) => {
         await page.goto('/');
-        const configs = [[2, 4, 4], [4, 6, 4], [6, 9, 5]];
-        for (const [colors, tubes, capacity] of configs) {
-            await setConfig(page, colors, tubes, capacity);
+        const configs = [[2, 4, 4, 1], [4, 6, 4, 2], [6, 9, 5, 3]];
+        for (const [colors, tubes, capacity, emptyTubes] of configs) {
+            await setConfig(page, colors, tubes, capacity, emptyTubes);
             await page.click('#newGameBtn');
             const dbg = await getDebug(page);
-            expect(dbg.state.config).toEqual({ numColors: colors, numTubes: tubes, capacity: capacity });
+            expect(dbg.state.config).toEqual({ numColors: colors, numTubes: tubes, capacity: capacity, emptyTubes });
             expect(dbg.state.tubes.length).toBe(tubes);
             expect(dbg.won).toBe(false);
+            expect(dbg.state.tubes.filter((tube) => tube.contents.length === 0)).toHaveLength(emptyTubes);
+            expect(dbg.state.tubes.every((tube) => tube.contents.length === 0 || tube.contents.length === tube.capacity)).toBe(true);
             // Solvability itself is exhaustively verified in tests/logic.test.js;
             // here we confirm the generated puzzle renders and is interactive.
             expect(dbg.layout.tubeRects.length).toBe(tubes);

@@ -7,18 +7,18 @@ A browser-based puzzle game where players configure and solve water-sorting chal
 ## ADDED Requirements
 
 ### Requirement: Puzzle Configuration
-The system SHALL accept player-configurable parameters for puzzle generation: number of colors, number of tubes, and tube capacity. Each parameter MUST have a sensible default value. Players SHALL be able to adjust these values before generating a puzzle.
+The system SHALL accept player-configurable parameters for puzzle generation: number of colors, number of tubes, tube capacity, and number of empty tubes. Each parameter MUST have a sensible default value. The empty-tube default MUST be 1. Players SHALL be able to adjust these values before generating a puzzle.
 
 #### Scenario: Player configures puzzle with defaults
 - **WHEN** page loads
-- **THEN** configuration fields display default values (e.g., 4 colors, 6 tubes, capacity 4)
+- **THEN** configuration fields display default values (e.g., 4 colors, 6 tubes, capacity 4, 1 empty tube)
 
 #### Scenario: Player customizes parameters
 - **WHEN** player changes a configuration value and clicks "New Game"
 - **THEN** system generates a new puzzle with specified parameters
 
 ### Requirement: Puzzle Generation from Solution
-The system SHALL generate solvable puzzles by constructing a complete solved state and then applying a fixed number of random shuffle moves that are reversible by construction (each move may place one color on top of a different color, unlike an ordinary pour, but caps the transferred amount so it can always be undone by a single valid pour). Every generated puzzle MUST be solvable, and MUST NOT already satisfy the win condition when handed to the player. Generation MUST also target a specific occupied-tube count (leaving only a small, configurable number of tubes empty) rather than leaving empty-tube count to whatever an unbiased shuffle happens to produce, so puzzles with many more tubes than colors remain appropriately challenging.
+The system SHALL generate solvable puzzles by constructing a complete solved state and then applying random full-tube exchanges that are reversible by construction. Every generated puzzle MUST be solvable, MUST NOT already satisfy the win condition when handed to the player, and MUST contain exactly the configured number of empty tubes. Every tube that is not empty at game start MUST be full.
 
 #### Scenario: Puzzle is always solvable
 - **WHEN** system generates a puzzle
@@ -28,9 +28,9 @@ The system SHALL generate solvable puzzles by constructing a complete solved sta
 - **WHEN** system generates a puzzle
 - **THEN** the win condition is not already satisfied, and (when more than one color is configured) at least one tube contains more than one color
 
-#### Scenario: Puzzle occupies tubes even when many spare tubes are configured
-- **WHEN** system generates a puzzle where the configured tube count is much larger than the color count
-- **THEN** the number of occupied tubes is close to the tube count (leaving only a small, roughly constant number of tubes empty), not left at whatever lower count an unbiased shuffle would naturally settle to
+#### Scenario: Puzzle honors configured empty-tube count
+- **WHEN** the player selects a number of empty tubes and generates a puzzle
+- **THEN** exactly that number of tubes is empty, and every other tube is full
 
 ### Requirement: Game Board State
 The system SHALL represent the game board as a collection of tubes, each with a fixed capacity and contents. Tubes contain colored water units stacked from bottom to top. Empty tubes are allowed. The top water unit in a tube is the active unit that can be poured.
@@ -41,7 +41,7 @@ The system SHALL represent the game board as a collection of tubes, each with a 
 
 #### Scenario: Empty tubes exist
 - **WHEN** puzzle initializes
-- **THEN** some tubes MAY be empty at start, and some tubes MAY remain empty after solving
+- **THEN** exactly the configured number of tubes is empty, every non-empty tube is full, and the same number of empty tubes MAY remain after solving
 
 ### Requirement: Pouring Mechanics
 Players SHALL pour water from one tube (source) to another (destination). A pour is valid ONLY if: (1) source tube has water, (2) destination tube has room, and (3) the top colors match OR destination is empty. A valid pour transfers all consecutive water units of the top color from source to destination (or until destination is full).
@@ -74,7 +74,7 @@ When a player attempts an invalid move, the system SHALL provide immediate visua
 - **THEN** system displays visual feedback (e.g., red highlight, shake, or message)
 
 ### Requirement: Win Condition
-A puzzle is won when all tubes are either: (1) completely full with a single color, OR (2) completely empty. No partially-filled tubes remain in a solved state.
+The system SHALL treat a puzzle as won only when all tubes are either: (1) completely full with a single color, OR (2) completely empty. No partially-filled tubes remain in a solved state.
 
 #### Scenario: Puzzle solved with complete tubes
 - **WHEN** all remaining tubes are full and monochrome, and empty tubes are allowed
@@ -115,4 +115,3 @@ The system SHALL render the game board on an HTML5 Canvas element using vanilla 
 #### Scenario: Board renders to canvas
 - **WHEN** game initializes or state changes
 - **THEN** tubes and their water contents are drawn to canvas, and buttons/configuration inputs remain visible and interactive as native HTML controls outside the canvas
-
