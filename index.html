@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Water Sort Puzzle</title>
+<style>
+    body {
+        font-family: Arial, Helvetica, sans-serif;
+        background: #1b1f27;
+        color: #eee;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 20px;
+        margin: 0;
+    }
+    h1 {
+        margin: 8px 0 4px;
+    }
+    #configPanel {
+        display: flex;
+        gap: 16px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    #configPanel label {
+        display: flex;
+        flex-direction: column;
+        font-size: 14px;
+    }
+    #configPanel input {
+        width: 70px;
+        padding: 4px;
+        margin-top: 4px;
+        font-size: 14px;
+    }
+    canvas {
+        background: #2c313c;
+        border-radius: 12px;
+        touch-action: manipulation;
+        max-width: 100%;
+    }
+    #controls {
+        display: flex;
+        gap: 16px;
+        margin-top: 16px;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    #controls button {
+        width: 120px;
+        height: 40px;
+        font-size: 15px;
+        border: none;
+        border-radius: 8px;
+        background: #3a86ff;
+        color: #ffffff;
+        cursor: pointer;
+    }
+    #controls button:disabled {
+        background: #4a4f58;
+        color: #8a8f98;
+        cursor: default;
+    }
+</style>
+</head>
+<body>
+    <h1>Water Sort Puzzle</h1>
+    <!-- Configuration inputs are rendered as an HTML overlay (permitted alternative to
+         drawing them on canvas) for native accessibility and validation. -->
+    <div id="configPanel">
+        <label for="configColors">Colors
+            <input type="number" id="configColors" min="1" max="16" value="4">
+        </label>
+        <label for="configTubes">Tubes
+            <input type="number" id="configTubes" min="3" max="20" value="6">
+        </label>
+        <label for="configCapacity">Capacity
+            <input type="number" id="configCapacity" min="2" max="12" value="4">
+        </label>
+    </div>
+    <!-- Only the tubes and their water contents are drawn to this canvas by app.js. -->
+    <canvas id="gameCanvas" width="600" height="420"></canvas>
+
+    <!-- New Game, Undo, and Restart are native HTML buttons (not canvas-drawn). -->
+    <div id="controls">
+        <button type="button" id="newGameBtn">New Game</button>
+        <button type="button" id="undoBtn">Undo</button>
+        <button type="button" id="restartBtn">Restart</button>
+    </div>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>

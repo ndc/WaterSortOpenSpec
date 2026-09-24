@@ -1,0 +1,20 @@
+{
+  "name": "watersort",
+  "version": "1.0.0",
+  "description": "Browser-based water-sort puzzle game (vanilla JS + Canvas).",
+  "main": "app.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "node --test tests/logic.test.js",
+    "test:e2e": "playwright test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}

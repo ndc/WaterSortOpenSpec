@@ -18,11 +18,19 @@ The system SHALL accept player-configurable parameters for puzzle generation: nu
 - **THEN** system generates a new puzzle with specified parameters
 
 ### Requirement: Puzzle Generation from Solution
-The system SHALL generate solvable puzzles by constructing a complete solved state and then reverse-solving it through random valid moves. Every generated puzzle MUST be solvable.
+The system SHALL generate solvable puzzles by constructing a complete solved state and then applying a fixed number of random shuffle moves that are reversible by construction (each move may place one color on top of a different color, unlike an ordinary pour, but caps the transferred amount so it can always be undone by a single valid pour). Every generated puzzle MUST be solvable, and MUST NOT already satisfy the win condition when handed to the player. Generation MUST also target a specific occupied-tube count (leaving only a small, configurable number of tubes empty) rather than leaving empty-tube count to whatever an unbiased shuffle happens to produce, so puzzles with many more tubes than colors remain appropriately challenging.
 
 #### Scenario: Puzzle is always solvable
 - **WHEN** system generates a puzzle
 - **THEN** there exists at least one sequence of moves that reaches the win condition
+
+#### Scenario: Puzzle is never already solved
+- **WHEN** system generates a puzzle
+- **THEN** the win condition is not already satisfied, and (when more than one color is configured) at least one tube contains more than one color
+
+#### Scenario: Puzzle occupies tubes even when many spare tubes are configured
+- **WHEN** system generates a puzzle where the configured tube count is much larger than the color count
+- **THEN** the number of occupied tubes is close to the tube count (leaving only a small, roughly constant number of tubes empty), not left at whatever lower count an unbiased shuffle would naturally settle to
 
 ### Requirement: Game Board State
 The system SHALL represent the game board as a collection of tubes, each with a fixed capacity and contents. Tubes contain colored water units stacked from bottom to top. Empty tubes are allowed. The top water unit in a tube is the active unit that can be poured.
@@ -102,9 +110,9 @@ Players SHALL be able to generate a new puzzle using the same or updated configu
 - **THEN** system generates a new solvable puzzle using current configuration parameters
 
 ### Requirement: Canvas Rendering
-The system SHALL render the game board and tubes on an HTML5 Canvas element using vanilla JavaScript. Tubes, water units, and UI elements (buttons, configuration inputs) are drawn to canvas. The rendering MUST be responsive and visually clear.
+The system SHALL render the game board on an HTML5 Canvas element using vanilla JavaScript. Tubes and their water contents are drawn to canvas. Buttons (New Game, Undo, Restart) and configuration inputs are native HTML elements rendered outside the canvas, not drawn to it. The rendering MUST be responsive and visually clear.
 
 #### Scenario: Board renders to canvas
 - **WHEN** game initializes or state changes
-- **THEN** all game elements are drawn to canvas with tubes, water contents, and controls visible
+- **THEN** tubes and their water contents are drawn to canvas, and buttons/configuration inputs remain visible and interactive as native HTML controls outside the canvas
 
