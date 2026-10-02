@@ -193,35 +193,79 @@ export function createSolvedState(config) {
     return tubes;
 }
 
-// Swaps top-color segments between two full tubes through an empty buffer.
-// All three generation-only transfers are reversed by valid player pours:
-// destination -> buffer, source -> destination, then buffer -> source.
-function exchangeFullTubeSegments(tubes, from, to, buffer, amount) {
-    const source = tubes[from];
-    const destination = tubes[to];
-    const temporary = tubes[buffer];
-    const sourceColor = source.getTop();
-    const destinationColor = destination.getTop();
-
-    source.remove(amount);
-    temporary.add(sourceColor, amount);
-    destination.remove(amount);
-    source.add(destinationColor, amount);
-    temporary.remove(amount);
-    destination.add(sourceColor, amount);
+function shuffleInPlace(items, rng) {
+    for (let i = items.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [items[i], items[j]] = [items[j], items[i]];
+    }
+    return items;
 }
 
 function everyOccupiedTubeIsMixed(tubes) {
     return tubes.every((tube) => tube.isEmpty() || new Set(tube.contents).size >= 2);
 }
 
-// Generates a puzzle from a solved board by deterministically pairing full
-// tubes with different top colors and exchanging non-full segments through
-// the first empty tube. Every pair becomes mixed while remaining full. An
-// odd final group is mixed with two exchanges: three distinct colors need two
-// one-unit exchanges, while the two-color case needs a first exchange of at
-// least two units. Each exchange has a three-pour valid-player inverse, so
-// the resulting puzzle is solvable by construction without BFS at runtime.
+function createRandomizedMixedState(config, rng) {
+    const { numTubes, capacity } = config;
+    const emptyTubes = config.emptyTubes ?? DEFAULT_CONFIG.emptyTubes;
+    const filledTubeCount = numTubes - emptyTubes;
+    const solvedTubes = createSolvedState(config);
+    const colorCounts = new Map();
+
+    for (let i = 0; i < filledTubeCount; i++) {
+        for (const color of solvedTubes[i].contents) {
+            colorCounts.set(color, (colorCounts.get(color) || 0) + 1);
+        }
+    }
+
+    const colorOrder = shuffleInPlace(Array.from(colorCounts.keys()), rng);
+    const tubes = Array.from({ length: numTubes }, () => new Tube(capacity));
+
+    // Seed each occupied tube with two different colors; shuffle the rest
+    // into the remaining slots so every generated tube stays mixed.
+    for (let i = 0; i < filledTubeCount; i++) {
+        colorOrder.sort((a, b) => colorCounts.get(b) - colorCounts.get(a));
+        const first = colorOrder[0];
+        const second = colorOrder.find((color) => colorCounts.get(color) > 0 && color !== first);
+        if (!second || colorCounts.get(first) === 0) {
+            throw new Error('unable to generate a mixed puzzle for this configuration');
+        }
+
+        colorCounts.set(first, colorCounts.get(first) - 1);
+        colorCounts.set(second, colorCounts.get(second) - 1);
+        if (rng() < 0.5) {
+            tubes[i].add(first);
+            tubes[i].add(second);
+        } else {
+            tubes[i].add(second);
+            tubes[i].add(first);
+        }
+    }
+
+    const remainingUnits = [];
+    for (const [color, count] of colorCounts) {
+        for (let i = 0; i < count; i++) remainingUnits.push(color);
+    }
+    const remainingSlots = [];
+    for (let tubeIndex = 0; tubeIndex < filledTubeCount; tubeIndex++) {
+        for (let slot = 2; slot < capacity; slot++) remainingSlots.push(tubeIndex);
+    }
+    shuffleInPlace(remainingUnits, rng);
+    shuffleInPlace(remainingSlots, rng);
+
+    for (let i = 0; i < remainingUnits.length; i++) {
+        tubes[remainingSlots[i]].add(remainingUnits[i]);
+    }
+    for (let i = 0; i < filledTubeCount; i++) {
+        shuffleInPlace(tubes[i].contents, rng);
+    }
+
+    return tubes;
+}
+
+// Generates a randomized deal while preserving the configured color-unit
+// counts, exact empty-tube count, full occupancy, and mixed-tube invariant.
+// Solvability is intentionally not checked or guaranteed.
 export function generatePuzzle(config, options = {}) {
     const rng = options.rng || Math.random;
     const { numColors, capacity } = config;
@@ -231,36 +275,14 @@ export function generatePuzzle(config, options = {}) {
         throw new Error('two colors with capacity 2 require an even number of filled tubes');
     }
 
-    const tubes = createSolvedState(config);
-    const buffer = filledTubeCount;
-    const pairedTubeCount = filledTubeCount % 2 === 0 ? filledTubeCount : filledTubeCount - 3;
-    for (let from = 0; from < pairedTubeCount; from += 2) {
-        const amount = 1 + Math.floor(rng() * (capacity - 1));
-        exchangeFullTubeSegments(tubes, from, from + 1, buffer, amount);
-    }
-
-    if (filledTubeCount % 2 !== 0) {
-        const first = filledTubeCount - 3;
-        const second = filledTubeCount - 2;
-        const third = filledTubeCount - 1;
-        if (numColors === 2) {
-            const amount = 2 + Math.floor(rng() * (capacity - 2));
-            exchangeFullTubeSegments(tubes, first, second, buffer, amount);
-            exchangeFullTubeSegments(tubes, third, first, buffer, 1);
-        } else {
-            exchangeFullTubeSegments(tubes, first, second, buffer, 1);
-            exchangeFullTubeSegments(tubes, third, first, buffer, 1);
-        }
-    }
-
+    const tubes = createRandomizedMixedState(config, rng);
     if (!everyOccupiedTubeIsMixed(tubes)) {
         throw new Error('unable to generate a puzzle with every occupied tube mixed');
     }
     return tubes;
 }
 
-// BFS solver used to verify puzzles are solvable (see tasks 3.4 / 8.2) and
-// for automated testing. Not exposed as a player-facing hint feature.
+// Optional BFS utility; puzzle generation does not call it.
 export function isSolvable(tubes, maxStates = 200000) {
     if (checkWinCondition(tubes)) return true;
 

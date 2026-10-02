@@ -2,7 +2,7 @@
 
 ## Purpose
 
-A browser-based puzzle game where players configure and solve water-sorting challenges by pouring colored water between tubes, with guaranteed solvability and full move history.
+A browser-based puzzle game where players configure and solve randomized water-sorting challenges by pouring colored water between tubes, with full move history. Generated puzzles are not guaranteed to be solvable.
 
 ## ADDED Requirements
 
@@ -17,20 +17,24 @@ The system SHALL accept player-configurable parameters for puzzle generation: nu
 - **WHEN** player changes a configuration value and clicks "New Game"
 - **THEN** system generates a new puzzle with specified parameters
 
-### Requirement: Puzzle Generation from Solution
-The system SHALL generate solvable puzzles by constructing a complete solved state and then applying random full-tube exchanges that are reversible by construction. Every generated puzzle MUST be solvable, MUST NOT already satisfy the win condition when handed to the player, and MUST contain exactly the configured number of empty tubes. Every tube that is not empty at game start MUST be full and contain at least two distinct colors.
+### Requirement: Randomized Puzzle Generation
+The system SHALL generate puzzles by randomly distributing the configured color units among the occupied tubes. It MUST preserve the configured color-unit counts, leave exactly the configured number of tubes empty, and keep every other tube full. Every occupied tube MUST contain at least two distinct colors, and the initial board MUST NOT already satisfy the win condition. The system is not required to guarantee that a generated puzzle is solvable and MUST NOT use a solver to reject or retry a puzzle based on solvability.
 
-#### Scenario: Puzzle is always solvable
-- **WHEN** system generates a puzzle
-- **THEN** there exists at least one sequence of moves that reaches the win condition
+#### Scenario: Puzzle starts mixed and unsolved
+- **WHEN** the system generates a puzzle
+- **THEN** every occupied tube is full and contains at least two colors, and the win condition is not already satisfied
 
-#### Scenario: Puzzle is never already solved
-- **WHEN** system generates a puzzle
-- **THEN** the win condition is not already satisfied, and (when more than one color is configured) at least one tube contains more than one color
-
-#### Scenario: Puzzle honors configured empty-tube count
+#### Scenario: Puzzle honors configured empty-tube count and color totals
 - **WHEN** the player selects a number of empty tubes and generates a puzzle
-- **THEN** exactly that number of tubes is empty, and every other tube is full and contains at least two distinct colors
+- **THEN** exactly that number of tubes is empty, every other tube is full, and the configured color-unit counts are preserved
+
+#### Scenario: Puzzle generation randomizes initial colors
+- **WHEN** the system generates puzzles repeatedly with the same configuration
+- **THEN** it may produce different color arrangements while preserving the puzzle-generation constraints
+
+#### Scenario: Puzzle generation does not guarantee solvability
+- **WHEN** the system generates a puzzle
+- **THEN** it does not run a solver or require that a solution exists
 
 ### Requirement: Game Board State
 The system SHALL represent the game board as a collection of tubes, each with a fixed capacity and contents. Tubes contain colored water units stacked from bottom to top. Empty tubes are allowed. The top water unit in a tube is the active unit that can be poured.
@@ -107,7 +111,7 @@ Players SHALL be able to generate a new puzzle using the same or updated configu
 
 #### Scenario: New Game with current config
 - **WHEN** player clicks "New Game"
-- **THEN** system generates a new solvable puzzle using current configuration parameters
+- **THEN** system generates a new randomized puzzle using current configuration parameters
 
 ### Requirement: Canvas Rendering
 The system SHALL render the game board on an HTML5 Canvas element using vanilla JavaScript. Tubes and their water contents are drawn to canvas. Buttons (New Game, Undo, Restart) and configuration inputs are native HTML elements rendered outside the canvas, not drawn to it. The rendering MUST be responsive and visually clear.

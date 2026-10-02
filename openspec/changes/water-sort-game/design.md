@@ -3,7 +3,7 @@
 ## Context
 
 See proposal.md for motivation. The game needs to:
-- Generate solvable water-sort puzzles on demand
+- Generate randomized water-sort puzzles on demand
 - Render and interact with a game board on HTML5 Canvas
 - Handle user moves with immediate visual feedback
 - Maintain full move history for undo/restart
@@ -14,7 +14,7 @@ Technology constraints: Vanilla JavaScript, Canvas rendering, no backend.
 
 **Goals:**
 - Single-player web-based puzzle game experience
-- Guaranteed solvable puzzles via reverse-solution approach
+- Randomized starting colors with every occupied tube mixed
 - Responsive Canvas UI with clear visual feedback
 - Full move history and restart capability
 - Configurable difficulty (colors, tubes, capacity)
@@ -28,29 +28,22 @@ Technology constraints: Vanilla JavaScript, Canvas rendering, no backend.
 
 ## Decisions
 
-### 1. Puzzle Generation Strategy: Build from Solution
-**Decision**: Generate puzzles by creating a solved state, then applying a fixed number of random "shuffle moves" that are reversible by construction but are deliberately NOT literal valid player pours.
+### 1. Puzzle Generation Strategy: Constrained Random Deal
+**Decision**: Build a multiset of color units from the configured color distribution. Randomly seed every occupied tube with two different colors, shuffle the remaining units and tube slots, and randomize each tube's color order. Do not check whether a generated arrangement is solvable.
 
-**Rationale**: Guarantees solvability without a separate solver or retry loop. An earlier version of this decision shuffled by replaying ordinary valid pours (`pourWater`/`isValidMove`) in reverse; that turned out to be fundamentally broken, not just imprecise. A valid pour can only ever move an already-homogeneous run of one color onto an empty tube or onto a matching top color - it can never introduce a new boundary between two different colors within a tube. So starting from a solved state (every tube monochrome-or-empty) and only ever applying valid pours can only ever reach *other* monochrome-or-empty states: colors end up relocated to different tubes, but every tube still holds a single color, which `checkWinCondition` always treats as an immediate win. This was the root cause of puzzles appearing "already sorted" as soon as the game started.
+**Rationale**: Randomly distributing individual units makes the starting tubes less predictable than the previous fixed exchange pattern. Preserving the multiset retains the configured color totals, while seeding each tube with two distinct colors guarantees the mixed-tube constraint without repeated deals. The system deliberately makes no solvability guarantee; generation does not call a search algorithm to verify or filter a deal.
 
-The fix lifts the shuffle move's color-matching restriction (it may place one color on top of a *different* color, which a real pour never allows) while capping the transferred amount so the source tube's exposed top color never changes as a result. That cap is exactly what keeps every shuffle move reversible by a single valid player pour immediately afterward, so replaying the reverses of the whole shuffle sequence in order is always a valid solution - proving every generated puzzle solvable by construction, with no search needed at generation time.
-
-A further refinement was needed once puzzles with many more tubes than colors were tried: an unbiased shuffle leaves empty-tube count to chance and creates partially filled tubes, which is both too easy and contrary to the desired starting-board shape. Empty-tube count is now a player-configurable parameter with a default of 1. A solved board contains exactly that number of empty tubes; every remaining tube is full and monochrome, and colors repeat across full tubes as needed.
-
-Generation creates mixed full tubes with a reversible three-transfer exchange through one empty tube: move a top-color segment from a full source to the empty buffer, move an equal-size top segment from another full tube into the source, then move the buffered segment into the second tube. Both occupied tubes are full again and the buffer is empty. The player can undo that exchange with three ordinary pours in reverse order, so composing exchanges preserves solvability by construction while preserving the exact configured empty-tube count and ensuring every non-empty generated tube is full.
-
-The generator pairs initially monochrome full tubes with different colors and exchanges a non-full segment for each pair, deterministically making both tubes mixed. If an odd number of full tubes remains, it mixes the final three with two exchanges. This guarantees every non-empty tube has at least two colors without probabilistic retries. Two colors with capacity two and an odd filled-tube count are mathematically incompatible with this invariant: a solved board can only contain whole two-unit color groups, but all mixed tubes would require at least one unit of each color. Validation therefore increases the empty-tube count by one in that case. At least two colors are required because a one-color board cannot simultaneously be unsolved and contain only full-or-empty tubes.
+The two-color, capacity-two, odd-filled-tube configuration remains normalized by validation because it cannot satisfy the mixed-tube invariant. The existing minimum of two colors and at least one empty tube remain necessary configuration constraints.
 
 **Alternatives Considered**:
-- Reverse-solving via ordinary valid pours only: what the original decision specified; proven unable to produce anything but already-solved boards (see Rationale above) - rejected as fundamentally incorrect, not merely simplified.
-- Random initialization + solvability check (deal a random arrangement, verify with a BFS solver, retry on failure): produces genuinely mixed tubes, but BFS verification is expensive for larger/more-occupied configs (multi-second, and can exhaust memory before concluding either way once state spaces get large - observed when checking a 20-tube/4-color puzzle) and retries would compound that cost - rejected in favor of a construction that guarantees solvability without needing to search.
-- Uniform random shuffle or the earlier guarded-shuffle/spread-target approach: both allow partially filled starting tubes, which conflicts with the full-tube invariant - rejected in favor of full-tube exchanges.
-- Constraint-based generation: More sophisticated but complex; overkill for this scope.
+- Generate from a solved state with reversible exchanges: preserves solvability by construction, but produces a narrower set of layouts and is no longer required.
+- Generate random arrangements and use BFS to reject unsolvable ones: expensive for larger boards and contrary to the decision not to guarantee solvability.
+- Allow partially-filled tubes: rejected because the configured full-tube starting layout remains a requirement.
 
 ### 2. Water Distribution Strategy: Configurable Empty Tubes and Full Occupancy
 **Decision**: The player configures `emptyTubes` (default 1). Generation creates exactly `numTubes - emptyTubes` full tubes and assigns colors cyclically across them, so a color may occupy multiple full tubes. Validation retains at least one empty tube and at least one full tube per color.
 
-**Rationale**: The original unit-count model could not fill more than one tube per color, so it could not both preserve a small configurable empty-tube count and leave every occupied tube full. Repeating colors across full tubes supports both requirements without sacrificing reversible-by-construction generation.
+**Rationale**: The original unit-count model could not fill more than one tube per color, so it could not both preserve a small configurable empty-tube count and leave every occupied tube full. Repeating colors across full tubes supports both requirements while preserving a fixed multiset for randomized deals.
 
 **Alternatives Considered**:
 - Fixed distribution (e.g., each color appears exactly N times): More predictable but less flexible
@@ -98,8 +91,8 @@ The generator pairs initially monochrome full tubes with different colors and ex
 
 | Risk | Mitigation |
 |------|-----------|
-| ~~Reverse-solving may take time for large puzzle sizes~~ Resolved by construction | Generation applies a fixed number of O(1) shuffle moves with no search, backtracking, or retries (see Decision 1), so generation time does not scale with puzzle size the way a solver-based approach would |
-| `isSolvable`'s BFS verification (used only in tests, never at generation time) does not scale to configs with many tubes - it can take multiple seconds or exhaust memory without concluding either way once the reachable state space gets large (observed for 20 tubes / 4 colors) | Not a runtime concern since `generatePuzzle` never calls `isSolvable` (solvability is proven by construction - see Decision 1); tests verify solvability with BFS only at smaller scales and otherwise rely on the construction proof |
+| Invalid configurations may not have enough distinct colors to seed every occupied tube | Validate the minimum color count and normalize the incompatible two-color, capacity-two, odd-filled-tube case |
+| Some generated puzzles may be unsolvable | This is an intentional trade-off; generation does not run a solver or promise a solution |
 | Canvas rendering may be CPU-intensive for frequent redraws | Optimize canvas redraws; only redraw on state change |
 | No persistence across sessions | Acceptable for single-level MVP; session storage can be added later if needed |
 | Keyboard/accessibility not planned | Native HTML buttons/inputs (see Decision 3) provide keyboard and screen-reader support for free; tube interaction remains mouse/touch only for this iteration |

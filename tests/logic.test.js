@@ -7,7 +7,7 @@ import * as WaterSort from '../game.js';
 
 const {
     Tube, GameState, isValidMove, pourWater, getAllValidMoves, getRandomValidMove,
-    checkWinCondition, createSolvedState, generatePuzzle, isSolvable, validateConfig,
+    checkWinCondition, createSolvedState, generatePuzzle, validateConfig,
     DEFAULT_CONFIG
 } = WaterSort;
 
@@ -131,55 +131,50 @@ test('getRandomValidMove: only returns legal moves', () => {
     assert.ok(moves.length > 0);
 });
 
-// ---- Puzzle generation + solvability (3.4, 8.2) ----
-test('generatePuzzle: produces solvable puzzles across configs', () => {
+// ---- Randomized puzzle generation (3.4, 3.7, 8.2) ----
+function createSeededRng(seed) {
+    return () => {
+        seed = (seed * 1664525 + 1013904223) >>> 0;
+        return seed / 0x100000000;
+    };
+}
+
+function countColors(tubes) {
+    const counts = new Map();
+    for (const tube of tubes) {
+        for (const color of tube.contents) {
+            counts.set(color, (counts.get(color) || 0) + 1);
+        }
+    }
+    return counts;
+}
+
+test('generatePuzzle: preserves counts and mixed full-tube constraints across configs', () => {
     const configs = [
         { numColors: 2, numTubes: 3, capacity: 3, emptyTubes: 1 },
         { numColors: 2, numTubes: 4, capacity: 4, emptyTubes: 2 },
         { numColors: 4, numTubes: 6, capacity: 4, emptyTubes: 2 },
-        { numColors: 6, numTubes: 8, capacity: 4, emptyTubes: 2 }
+        { numColors: 6, numTubes: 9, capacity: 5, emptyTubes: 3 },
+        { numColors: 16, numTubes: 20, capacity: 2, emptyTubes: 3 }
     ];
     configs.forEach((config) => {
-        for (let i = 0; i < 5; i++) {
-            const tubes = generatePuzzle(config);
-            assert.equal(isSolvable(tubes), true, `puzzle for config ${JSON.stringify(config)} must be solvable`);
-        }
-    });
-});
-
-// Regression test for the "tubes already sorted at start" bug: generation
-// used to shuffle by replaying valid pours from a solved state, which can
-// only ever relocate whole same-color tubes and therefore always produced an
-// already-solved board. A correct generator must produce unsolved puzzles
-// with genuinely mixed tubes.
-test('generatePuzzle: result is not already solved and every occupied tube is genuinely mixed', () => {
-    const config = { numColors: 4, numTubes: 6, capacity: 4, emptyTubes: 1 };
-    for (let i = 0; i < 20; i++) {
-        const tubes = generatePuzzle(config);
-        assert.equal(checkWinCondition(tubes), false, 'freshly generated puzzle must not already be solved');
-        assert.equal(
-            tubes.every((t) => t.isEmpty() || new Set(t.contents).size >= 2),
-            true,
-            'every occupied tube should contain at least two colors'
-        );
-    }
-});
-
-test('generatePuzzle: honors exact empty-tube count and starts every other tube full', () => {
-    const configs = [
-        { numColors: 4, numTubes: 20, capacity: 4, emptyTubes: 1 },
-        { numColors: 4, numTubes: 6, capacity: 4, emptyTubes: 2 }
-    ];
-    configs.forEach((config) => {
+        const expectedCounts = countColors(createSolvedState(config));
         for (let i = 0; i < 10; i++) {
             const tubes = generatePuzzle(config);
-            assert.equal(checkWinCondition(tubes), false, 'freshly generated puzzle must not already be solved');
-            assert.equal(tubes.filter((t) => t.isEmpty()).length, config.emptyTubes);
-            assert.equal(tubes.filter((t) => !t.isEmpty() && t.isFull()).length, config.numTubes - config.emptyTubes);
-            assert.equal(tubes.some((t) => !t.isEmpty() && !t.isFull()), false);
-            assert.equal(tubes.every((t) => t.isEmpty() || new Set(t.contents).size >= 2), true);
+            assert.equal(tubes.filter((tube) => tube.isEmpty()).length, config.emptyTubes);
+            assert.equal(tubes.filter((tube) => tube.isFull()).length, config.numTubes - config.emptyTubes);
+            assert.equal(tubes.every((tube) => tube.isEmpty() || new Set(tube.contents).size >= 2), true);
+            assert.equal(checkWinCondition(tubes), false);
+            assert.deepEqual(countColors(tubes), expectedCounts);
         }
     });
+});
+
+test('generatePuzzle: different random inputs can produce different arrangements', () => {
+    const config = { numColors: 4, numTubes: 6, capacity: 4, emptyTubes: 1 };
+    const first = generatePuzzle(config, { rng: createSeededRng(1) });
+    const second = generatePuzzle(config, { rng: createSeededRng(2) });
+    assert.notEqual(WaterSort.serializeTubes(first), WaterSort.serializeTubes(second));
 });
 
 // ---- pourWater (4.1) ----
