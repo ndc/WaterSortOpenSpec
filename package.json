@@ -2,7 +2,7 @@
   "name": "watersort",
   "version": "1.0.0",
   "description": "Browser-based water-sort puzzle game (vanilla JS + Canvas).",
-  "main": "app.js",
+  "main": "src/app.js",
   "directories": {
     "test": "tests"
   },

@@ -3,7 +3,7 @@
 // Run with: node --test tests/logic.test.js
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as WaterSort from '../game.js';
+import * as WaterSort from '../src/game.js';
 
 const {
     Tube, GameState, isValidMove, pourWater, getAllValidMoves, getRandomValidMove,
